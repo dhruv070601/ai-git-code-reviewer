@@ -1,0 +1,24 @@
+name: Unit Tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tests -v
+      - name: Generate sample report
+        run: python -m reviewer.review --diff-file sample/example.diff --out-dir review-results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sample-review-report
+          path: review-results/

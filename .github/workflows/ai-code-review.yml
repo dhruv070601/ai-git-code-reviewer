@@ -1,0 +1,69 @@
+name: AI Git Code Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: Base branch or commit
+        required: true
+        default: main
+      head_ref:
+        description: Head branch or commit
+        required: true
+        default: HEAD
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  review:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Select review range
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            echo "REVIEW_BASE=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_ENV"
+            echo "REVIEW_HEAD=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_ENV"
+          else
+            echo "REVIEW_BASE=${{ inputs.base_ref }}" >> "$GITHUB_ENV"
+            echo "REVIEW_HEAD=${{ inputs.head_ref }}" >> "$GITHUB_ENV"
+          fi
+      - name: Analyze diff
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: ${{ vars.AI_BASE_URL }}
+          AI_MODEL: ${{ vars.AI_MODEL }}
+        run: python -m reviewer.review --base "$REVIEW_BASE" --head "$REVIEW_HEAD" --out-dir review-results --use-ai
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-git-code-review-${{ github.run_number }}
+          path: review-results/
+          if-no-files-found: warn
+      - name: Comment on same-repository PR
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const p = 'review-results/review.md';
+            if (!fs.existsSync(p)) { core.warning('Review report was not created.'); return; }
+            const body = fs.readFileSync(p, 'utf8');
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              body: body.slice(0, 60000),
+              event: 'COMMENT'
+            });

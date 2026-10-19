@@ -1,0 +1,7 @@
+diff --git a/app/config.py b/app/config.py
+index 1234567..abcdef0 100644
+--- a/app/config.py
++++ b/app/config.py
+@@ -1,2 +1,3 @@
++api_key = supersecretvalue123
++DEBUG = True
